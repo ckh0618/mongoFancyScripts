@@ -23,6 +23,7 @@ OS_FAMILY=""
 ARCH=""
 SUDO=""
 PACKAGE_MANAGER=""
+MONGODB_OS_USER=""
 
 OPSMAN_MAJOR=""
 OPSMAN_VERSION=""
@@ -204,11 +205,13 @@ detect_platform() {
     ubuntu)
       OS_FAMILY="ubuntu"
       PACKAGE_MANAGER="apt"
+      MONGODB_OS_USER="mongodb"
       [[ "$OS_VERSION_ID" == "22.04" || "$OS_VERSION_ID" == "24.04" ]] || die "Supported Ubuntu versions are 22.04 and 24.04. Detected: $OS_VERSION_ID"
       [[ -n "$OS_CODENAME" ]] || die "Ubuntu codename could not be detected."
       ;;
     amzn)
       OS_FAMILY="amazon"
+      MONGODB_OS_USER="mongod"
       if [[ "$OS_VERSION_ID" == "2023" ]]; then
         PACKAGE_MANAGER="dnf"
       else
@@ -218,6 +221,7 @@ detect_platform() {
     rhel | rocky)
       OS_FAMILY="rhel"
       PACKAGE_MANAGER="dnf"
+      MONGODB_OS_USER="mongod"
       [[ "$OS_VERSION_MAJOR" == "8" || "$OS_VERSION_MAJOR" == "9" ]] || die "Supported RHEL/Rocky major versions are 8 and 9. Detected: $OS_VERSION_ID"
       ;;
     *)
@@ -233,6 +237,7 @@ detect_platform() {
   fi
 
   log "Detected platform: ${OS_ID} ${OS_VERSION_ID} (${ARCH})"
+  log "Using MongoDB OS account: ${MONGODB_OS_USER}"
 }
 
 configure_versions() {
@@ -326,10 +331,10 @@ write_mongod_config() {
 
   log "Preparing MongoDB AppDB data path and configuration."
   run $SUDO mkdir -p "$db_path"
-  run $SUDO chown -R mongodb:mongodb "$db_path"
+  run $SUDO chown -R "${MONGODB_OS_USER}:${MONGODB_OS_USER}" "$db_path"
   run_shell "openssl rand -base64 756 | ${SUDO:+$SUDO }tee /etc/mongodb.key >/dev/null"
   run $SUDO chmod 400 /etc/mongodb.key
-  run $SUDO chown mongodb:mongodb /etc/mongodb.key
+  run $SUDO chown "${MONGODB_OS_USER}:${MONGODB_OS_USER}" /etc/mongodb.key
 
   run_shell "${SUDO:+$SUDO }tee /etc/mongod.conf >/dev/null <<EOF
 systemLog:
