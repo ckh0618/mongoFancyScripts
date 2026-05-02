@@ -7,7 +7,6 @@ set -Eeuo pipefail
 SCRIPT_NAME="$(basename "$0")"
 readonly SCRIPT_NAME
 readonly DEFAULT_DATA_DIR="appdb"
-readonly DEFAULT_RS_NAME="prod1"
 readonly DEFAULT_MONGO_PORT="27017"
 readonly DEFAULT_OPSMAN_PORT="8080"
 readonly DEFAULT_ADMIN_EMAIL="admin@example.com"
@@ -325,8 +324,7 @@ install_mongodb() {
 
 write_mongod_config() {
   local datadir="$1"
-  local rs_name="$2"
-  local port="$3"
+  local port="$2"
   local db_path="/data/${datadir}1"
 
   log "Preparing MongoDB AppDB data path and configuration."
@@ -360,9 +358,6 @@ net:
 security:
   authorization: enabled
   keyFile: /etc/mongodb.key
-
-replication:
-  replSetName: ${rs_name}
 EOF"
 }
 
@@ -384,33 +379,6 @@ start_mongodb() {
 
   show_service_logs mongod
   die "mongod did not become ready in time."
-}
-
-init_replica_set() {
-  local rs_name="$1"
-  local rs_host="$2"
-  local port="$3"
-
-  log "Initializing MongoDB AppDB single-node replica set."
-  if [[ "$DRY_RUN" == "1" ]]; then
-    printf '[DRY-RUN] MONGO_RS_NAME=<provided> MONGO_RS_HOST=%q MONGO_RS_PORT=%q mongosh --quiet --eval %q\n' \
-      "$rs_host" \
-      "$port" \
-      "rs.initiate({_id: process.env.MONGO_RS_NAME, members: [{_id: 0, host: process.env.MONGO_RS_HOST + ':' + process.env.MONGO_RS_PORT}]})"
-    return 0
-  fi
-
-  MONGO_RS_NAME="$rs_name" MONGO_RS_HOST="$rs_host" MONGO_RS_PORT="$port" \
-    mongosh --quiet --eval "rs.initiate({_id: process.env.MONGO_RS_NAME, members: [{_id: 0, host: process.env.MONGO_RS_HOST + ':' + process.env.MONGO_RS_PORT}]})"
-
-  for _ in {1..30}; do
-    if [[ "$(mongosh --quiet --eval 'rs.status().myState' 2>/dev/null || true)" == "1" ]]; then
-      return 0
-    fi
-    sleep 2
-  done
-
-  die "MongoDB AppDB replica set did not become PRIMARY in time."
 }
 
 create_appdb_user() {
@@ -451,25 +419,24 @@ write_ops_manager_config() {
   local mongo_password="$2"
   local mongo_host="$3"
   local mongo_port="$4"
-  local rs_name="$5"
-  local opsman_host="$6"
-  local opsman_port="$7"
-  local admin_email="$8"
-  local from_email="$9"
-  local reply_to_email="${10}"
+  local opsman_host="$5"
+  local opsman_port="$6"
+  local admin_email="$7"
+  local from_email="$8"
+  local reply_to_email="$9"
   local encoded_user=""
   local encoded_password=""
   local mongo_uri=""
 
   encoded_user="$(url_encode "$mongo_user")"
   encoded_password="$(url_encode "$mongo_password")"
-  mongo_uri="mongodb://${encoded_user}:${encoded_password}@${mongo_host}:${mongo_port}/admin?replicaSet=${rs_name}"
+  mongo_uri="mongodb://${encoded_user}:${encoded_password}@${mongo_host}:${mongo_port}/admin"
 
   log "Writing Ops Manager minimal configuration."
   if [[ "$DRY_RUN" == "1" ]]; then
     cat <<EOF
 [DRY-RUN] tee /opt/mongodb/mms/conf/conf-mms.properties >/dev/null <<EOF_CONFIG
-mongo.mongoUri=mongodb://<encoded-user>:<encoded-password>@${mongo_host}:${mongo_port}/admin?replicaSet=${rs_name}
+mongo.mongoUri=mongodb://<encoded-user>:<encoded-password>@${mongo_host}:${mongo_port}/admin
 mongo.encryptedCredentials=false
 mms.ignoreInitialUiSetup=true
 mms.centralUrl=http://${opsman_host}:${opsman_port}
@@ -537,7 +504,6 @@ main() {
   local mongo_user=""
   local mongo_password=""
   local datadir=""
-  local rs_name=""
   local mongo_port=""
   local opsman_port=""
   local default_host=""
@@ -560,7 +526,6 @@ main() {
   fi
   prompt_required mongo_password "MongoDB AppDB admin password" "$default_mongo_password" "1"
   prompt_required datadir "MongoDB AppDB data directory name" "$DEFAULT_DATA_DIR" "0" validate_identifier
-  prompt_required rs_name "MongoDB AppDB replica set name" "$DEFAULT_RS_NAME" "0" validate_identifier
   prompt_required mongo_port "MongoDB AppDB port" "$DEFAULT_MONGO_PORT" "0" validate_port
   prompt_required appdb_host "MongoDB AppDB host for Ops Manager connection" "$default_host" "0" validate_host
   prompt_required central_host "Ops Manager central host or IP" "$default_host" "0" validate_host
@@ -571,17 +536,16 @@ main() {
 
   log "Starting minimal bootstrap. This can take several minutes."
   [[ "$DRY_RUN" == "1" ]] && log "DRY_RUN=1 is enabled. Commands will be printed but not executed."
-  [[ -n "$rs_name" ]] && log "Replica set name '${rs_name}' is collected for future expansion; this minimal AppDB starts as a single mongod."
+  log "MongoDB AppDB will run as a standalone mongod for Ops Manager pre-flight compatibility."
 
   install_prerequisites
   configure_mongodb_repo
   install_mongodb
-  write_mongod_config "$datadir" "$rs_name" "$mongo_port"
+  write_mongod_config "$datadir" "$mongo_port"
   start_mongodb
-  init_replica_set "$rs_name" "$appdb_host" "$mongo_port"
   create_appdb_user "$mongo_user" "$mongo_password" "$mongo_port"
   install_ops_manager
-  write_ops_manager_config "$mongo_user" "$mongo_password" "$appdb_host" "$mongo_port" "$rs_name" "$central_host" "$opsman_port" "$admin_email" "$from_email" "$reply_to_email"
+  write_ops_manager_config "$mongo_user" "$mongo_password" "$appdb_host" "$mongo_port" "$central_host" "$opsman_port" "$admin_email" "$from_email" "$reply_to_email"
   start_ops_manager
 
   log "Bootstrap completed."
