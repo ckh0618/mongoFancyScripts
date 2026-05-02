@@ -262,7 +262,13 @@ install_prerequisites() {
       run $SUDO apt-get update
       run $SUDO apt-get install -y ca-certificates curl gnupg openssl wget
       ;;
-    amazon | rhel)
+    amazon)
+      run $SUDO "$PACKAGE_MANAGER" install -y ca-certificates openssl wget
+      if ! command -v curl >/dev/null 2>&1; then
+        run $SUDO "$PACKAGE_MANAGER" install -y curl-minimal
+      fi
+      ;;
+    rhel)
       run $SUDO "$PACKAGE_MANAGER" install -y ca-certificates curl openssl wget
       ;;
   esac
