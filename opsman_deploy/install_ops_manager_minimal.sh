@@ -13,7 +13,6 @@ readonly DEFAULT_OPSMAN_PORT="8080"
 readonly DEFAULT_ADMIN_EMAIL="admin@example.com"
 
 DRY_RUN="${DRY_RUN:-0}"
-ASSUME_YES="${ASSUME_YES:-0}"
 PROMPT_DEFAULTS="${PROMPT_DEFAULTS:-0}"
 
 OS_ID=""
@@ -63,6 +62,16 @@ need_command() {
   command -v "$1" >/dev/null 2>&1 || die "Required command is missing: $1"
 }
 
+show_service_logs() {
+  local service_name="$1"
+
+  [[ "$DRY_RUN" == "1" ]] && return 0
+  command -v journalctl >/dev/null 2>&1 || return 0
+
+  printf '\n[%s] Last logs for %s:\n' "$SCRIPT_NAME" "$service_name" >&2
+  $SUDO journalctl -u "$service_name" -n 80 --no-pager >&2 || true
+}
+
 url_encode() {
   local input="$1"
   local output=""
@@ -83,14 +92,38 @@ url_encode() {
   printf '%s' "$output"
 }
 
+validate_identifier() {
+  local value="$1"
+  [[ "$value" =~ ^[A-Za-z0-9._-]+$ ]]
+}
+
+validate_port() {
+  local value="$1"
+  [[ "$value" =~ ^[0-9]+$ ]] && (( value >= 1 && value <= 65535 ))
+}
+
+validate_host() {
+  local value="$1"
+  [[ "$value" =~ ^[A-Za-z0-9._:-]+$ ]]
+}
+
+validate_email() {
+  local value="$1"
+  [[ "$value" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]
+}
+
 prompt_required() {
   local var_name="$1"
   local prompt_text="$2"
   local default_value="${3:-}"
   local secret="${4:-0}"
+  local validator="${5:-}"
   local value=""
 
   if [[ "$PROMPT_DEFAULTS" == "1" && -n "$default_value" ]]; then
+    if [[ -n "$validator" ]] && ! "$validator" "$default_value"; then
+      die "Default value for ${var_name} failed validation."
+    fi
     printf -v "$var_name" '%s' "$default_value"
     log "Using default value for ${var_name} because PROMPT_DEFAULTS=1."
     return 0
@@ -110,6 +143,10 @@ prompt_required() {
     fi
 
     if [[ -n "$value" ]]; then
+      if [[ -n "$validator" ]] && ! "$validator" "$value"; then
+        log "Invalid value. Please try again."
+        continue
+      fi
       printf -v "$var_name" '%s' "$value"
       return 0
     fi
@@ -206,6 +243,8 @@ configure_versions() {
       OPSMAN_VERSION="8.0.22"
       OPSMAN_DEB_URL="https://downloads.mongodb.com/on-prem-mms/deb/mongodb-mms-8.0.22.500.20260407T1112Z.amd64.deb"
       OPSMAN_RPM_URL="https://downloads.mongodb.com/on-prem-mms/rpm/mongodb-mms-8.0.22.500.20260407T1111Z.x86_64.rpm"
+      OPSMAN_DEB_URL="${OPSMAN_DEB_URL_OVERRIDE:-$OPSMAN_DEB_URL}"
+      OPSMAN_RPM_URL="${OPSMAN_RPM_URL_OVERRIDE:-$OPSMAN_RPM_URL}"
       select_from_menu MONGODB_MAJOR "Select compatible MongoDB AppDB release family." "8.0"
       ;;
     *)
@@ -332,6 +371,7 @@ start_mongodb() {
     sleep 2
   done
 
+  show_service_logs mongod
   die "mongod did not become ready in time."
 }
 
@@ -453,12 +493,24 @@ mms.mail.transport=smtp
 mongo.ssl=false
 automation.versions.source=hybrid
 EOF"
+  run $SUDO chown mongodb-mms:mongodb-mms /opt/mongodb/mms/conf/conf-mms.properties
+  run $SUDO chmod 600 /opt/mongodb/mms/conf/conf-mms.properties
 }
 
 start_ops_manager() {
   log "Starting MongoDB Ops Manager."
   run $SUDO systemctl enable mongodb-mms
   run $SUDO systemctl restart mongodb-mms
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    return 0
+  fi
+
+  sleep 5
+  if ! $SUDO systemctl is-active --quiet mongodb-mms; then
+    show_service_logs mongodb-mms
+    die "mongodb-mms did not start successfully."
+  fi
 }
 
 detect_default_host() {
@@ -491,20 +543,20 @@ main() {
   default_host="$(detect_default_host)"
   [[ -n "$default_host" ]] || default_host="127.0.0.1"
 
-  prompt_required mongo_user "MongoDB AppDB admin username" "admin"
+  prompt_required mongo_user "MongoDB AppDB admin username" "admin" "0" validate_identifier
   if [[ "$PROMPT_DEFAULTS" == "1" ]]; then
     default_mongo_password="${TEST_DEFAULT_MONGO_PASSWORD:-dry-run-password}"
   fi
   prompt_required mongo_password "MongoDB AppDB admin password" "$default_mongo_password" "1"
-  prompt_required datadir "MongoDB AppDB data directory name" "$DEFAULT_DATA_DIR"
-  prompt_required rs_name "MongoDB AppDB replica set name" "$DEFAULT_RS_NAME"
-  prompt_required mongo_port "MongoDB AppDB port" "$DEFAULT_MONGO_PORT"
-  prompt_required appdb_host "MongoDB AppDB host for Ops Manager connection" "$default_host"
-  prompt_required central_host "Ops Manager central host or IP" "$default_host"
-  prompt_required opsman_port "Ops Manager HTTP port" "$DEFAULT_OPSMAN_PORT"
-  prompt_required admin_email "Ops Manager admin email" "$DEFAULT_ADMIN_EMAIL"
-  prompt_required from_email "Ops Manager from email" "$admin_email"
-  prompt_required reply_to_email "Ops Manager reply-to email" "$admin_email"
+  prompt_required datadir "MongoDB AppDB data directory name" "$DEFAULT_DATA_DIR" "0" validate_identifier
+  prompt_required rs_name "MongoDB AppDB replica set name" "$DEFAULT_RS_NAME" "0" validate_identifier
+  prompt_required mongo_port "MongoDB AppDB port" "$DEFAULT_MONGO_PORT" "0" validate_port
+  prompt_required appdb_host "MongoDB AppDB host for Ops Manager connection" "$default_host" "0" validate_host
+  prompt_required central_host "Ops Manager central host or IP" "$default_host" "0" validate_host
+  prompt_required opsman_port "Ops Manager HTTP port" "$DEFAULT_OPSMAN_PORT" "0" validate_port
+  prompt_required admin_email "Ops Manager admin email" "$DEFAULT_ADMIN_EMAIL" "0" validate_email
+  prompt_required from_email "Ops Manager from email" "$admin_email" "0" validate_email
+  prompt_required reply_to_email "Ops Manager reply-to email" "$admin_email" "0" validate_email
 
   log "Starting minimal bootstrap. This can take several minutes."
   [[ "$DRY_RUN" == "1" ]] && log "DRY_RUN=1 is enabled. Commands will be printed but not executed."

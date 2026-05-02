@@ -21,6 +21,15 @@ curl -fsSL https://raw.githubusercontent.com/ckh0618/mongoFancyScripts/main/opsm
 
 The script prompts for required usernames, passwords, email addresses, hostnames, and ports. Empty values are rejected until a value is provided.
 
+## Package URL Overrides
+
+The script defaults to Ops Manager `8.0.22`. To test a different package build without editing the script, set one of these variables before running it:
+
+```bash
+export OPSMAN_DEB_URL_OVERRIDE="https://downloads.mongodb.com/on-prem-mms/deb/<package>.deb"
+export OPSMAN_RPM_URL_OVERRIDE="https://downloads.mongodb.com/on-prem-mms/rpm/<package>.rpm"
+```
+
 ## Dry Run
 
 Use `DRY_RUN=1` to validate OS detection, prompts, repository configuration, and command flow without changing the system.
@@ -45,4 +54,6 @@ systemctl status mongodb-mms
 curl http://<instance-ip>:8080
 ```
 
-Open port `8080` in the security group if you need browser access to the Ops Manager UI.
+Open port `8080` in the security group if you need browser access to the Ops Manager UI. Do not expose port `27017` to the internet for this minimal setup.
+
+If a service fails to start, the script prints the latest `journalctl` output for that service.
