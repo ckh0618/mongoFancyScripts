@@ -1,0 +1,21 @@
+.DS_Store
+
+# Local environment
+.env
+.env.*
+
+# Tool/runtime state
+.omx/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Editor backups
+*~
+*.bak
+*.swp
+*.swo
