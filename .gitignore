@@ -1,20 +1,52 @@
+# macOS / filesystem noise
 .DS_Store
+Thumbs.db
 
 # Local environment
 .env
 .env.*
+.envrc
 
 # Tool/runtime state
 .omx/
+.cache/
 
-# Logs and temporary files
+# Logs, process files, and temporary files
 *.log
+*.out
+*.err
+*.pid
 *.tmp
 *.temp
+*.trace
 tmp/
 temp/
+.tmp/
+.temp/
 
-# Editor backups
+# Downloaded packages and generated archives
+*.deb
+*.rpm
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+mongodb-mms*
+
+# Local credentials and generated secrets
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+.aws/
+
+# Editor and IDE local files
+.idea/
+.vscode/
 *~
 *.bak
 *.swp
