@@ -63,12 +63,19 @@ No internet access is required for normal report, dry-run, or apply behavior. Th
   - MongoDB 8 on `x86_64`: plans/applies THP enablement by default, including `enabled=always`, `defrag=defer+madvise`, `khugepaged/max_ptes_none=0`, and `vm.overcommit_memory=1`, reflecting current MongoDB guidance for updated TCMalloc.
   - If MongoDB major is not provided during interactive `--dry-run` or `--apply`, the script asks whether the host is for MongoDB 8.0 or newer and sets THP from that answer. In non-interactive execution without `--mongo-major`, THP mutation is skipped with a warning.
 - `sysctl` baseline:
+  - `kernel.pid_max = 64000`
   - `net.ipv4.tcp_keepalive_time = 120`
+  - `net.ipv4.tcp_fastopen = 3`
+  - `net.ipv4.tcp_retries2 = 5`
+  - `fs.file-max = 98000`
+  - `vm.max_map_count = 131060`
+  - `vm.zone_reclaim_mode = 0`
   - `vm.swappiness = 1`
   - `vm.force_cgroup_v2_swappiness = 1` only on compatible Red-Hat-family kernels where the key exists
-- `limits.d` baseline for the MongoDB OS user: Ubuntu defaults to `mongodb`; Rocky, RHEL, and Amazon Linux 2023 default to `mongod`. `nofile` and `nproc` are set to `64000`.
+- `limits.d` baseline for the MongoDB OS user: Ubuntu defaults to `mongodb`; Rocky, RHEL, and Amazon Linux 2023 default to `mongod`. `fsize`, `cpu`, `as`, and `memlock` are set to `unlimited`; `nofile` and `nproc` are set to `64000`.
 - NUMA: advisory report only. Missing commands or NUMA metadata produce warnings but do not fail the script.
 - Time sync: advisory report only. Missing `timedatectl`/`systemctl` support produces warnings but does not fail the script.
+- Disk `noatime`, block-device readahead, SELinux, and MongoDB service environment changes remain manual follow-ups because they depend on host-specific disk/service/security policy.
 
 ## Options
 

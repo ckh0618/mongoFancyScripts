@@ -209,7 +209,13 @@ sysctl_content() {
   cat <<SYSCTL
 # MongoDB production OS tuning baseline managed by $SCRIPT_NAME
 # See MongoDB production notes: TCP keepalive 120s and low swappiness.
+kernel.pid_max = 64000
 net.ipv4.tcp_keepalive_time = 120
+net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_retries2 = 5
+fs.file-max = 98000
+vm.max_map_count = 131060
+vm.zone_reclaim_mode = 0
 vm.swappiness = 1
 SYSCTL
   if is_redhat_like_for_cgroup_swappiness && sysctl_key_supported "vm.force_cgroup_v2_swappiness"; then
@@ -218,7 +224,13 @@ SYSCTL
 }
 
 apply_sysctl_runtime() {
+  run_cmd sysctl -w kernel.pid_max=64000
   run_cmd sysctl -w net.ipv4.tcp_keepalive_time=120
+  run_cmd sysctl -w net.ipv4.tcp_fastopen=3
+  run_cmd sysctl -w net.ipv4.tcp_retries2=5
+  run_cmd sysctl -w fs.file-max=98000
+  run_cmd sysctl -w vm.max_map_count=131060
+  run_cmd sysctl -w vm.zone_reclaim_mode=0
   run_cmd sysctl -w vm.swappiness=1
   if is_redhat_like_for_cgroup_swappiness && sysctl_key_supported "vm.force_cgroup_v2_swappiness"; then
     run_cmd sysctl -w vm.force_cgroup_v2_swappiness=1
@@ -230,6 +242,14 @@ apply_sysctl_runtime() {
 limits_content() {
   cat <<LIMITS
 # MongoDB production limits managed by $SCRIPT_NAME
+$MONGOD_USER soft fsize unlimited
+$MONGOD_USER hard fsize unlimited
+$MONGOD_USER soft cpu unlimited
+$MONGOD_USER hard cpu unlimited
+$MONGOD_USER soft as unlimited
+$MONGOD_USER hard as unlimited
+$MONGOD_USER soft memlock unlimited
+$MONGOD_USER hard memlock unlimited
 $MONGOD_USER soft nofile 64000
 $MONGOD_USER hard nofile 64000
 $MONGOD_USER soft nproc 64000
@@ -423,7 +443,7 @@ Non-goal boundaries honored:
 
 Manual follow-up:
 - Existing sessions/services may need restart or re-login to pick up limits.d changes.
-- Review NUMA and time synchronization warnings above.
+- Review NUMA, time synchronization, noatime, readahead, SELinux, and MongoDB service environment warnings above.
 - Run --dry-run before --apply on production hosts.
 ============================================
 REPORT
